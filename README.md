@@ -12,12 +12,10 @@ screen edge.
 
 ## Demo
 
-[![DockDock demo](docs/demo-poster.png)](https://github.com/jiwonsong95/DockDock/releases/download/v0.1.0/demo.mp4)
+<video src="https://github.com/user-attachments/assets/74ff290f-b053-40c8-ad2d-7dd001ebec32" controls width="720"></video>
 
-Click the preview to watch the demo. GitHub README pages do not reliably render
-repo-hosted video inline; for inline playback, upload `docs/demo.mp4` through a
-GitHub markdown editor and replace this link with the generated
-`https://github.com/user-attachments/assets/...` URL.
+If the video does not render in your browser, open the
+[release demo asset](https://github.com/jiwonsong95/DockDock/releases/download/v0.1.0/demo.mp4).
 
 ## Status
 
