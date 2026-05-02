@@ -10,6 +10,12 @@ enters that band from outside, DockDock nudges the pointer to the real Dock
 trigger pixel once, so the Dock opens earlier without trapping the mouse at the
 screen edge.
 
+## Demo
+
+<video src="docs/demo.mp4" controls width="720"></video>
+
+If the video does not render in your browser, open [docs/demo.mp4](docs/demo.mp4).
+
 ## Status
 
 DockDock is an early open-source macOS utility. It is built with SwiftPM and
