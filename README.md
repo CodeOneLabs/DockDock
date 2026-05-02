@@ -12,9 +12,9 @@ screen edge.
 
 ## Demo
 
-<video src="docs/demo.mp4" controls width="720"></video>
+<video src="https://raw.githubusercontent.com/jiwonsong95/DockDock/main/docs/demo.mp4" controls width="720"></video>
 
-If the video does not render in your browser, open [docs/demo.mp4](docs/demo.mp4).
+If the video does not render in your browser, open [docs/demo.mp4](docs/demo.mp4) or the [release demo asset](https://github.com/jiwonsong95/DockDock/releases/download/v0.1.0/demo.mp4).
 
 ## Status
 
