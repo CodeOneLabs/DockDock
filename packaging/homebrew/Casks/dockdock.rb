@@ -1,6 +1,6 @@
 cask "dockdock" do
-  version "0.1.0"
-  sha256 "99ab41f8dbb149a6d755ff506125d66d932896705d273f9997e4042f226f6c8f"
+  version "0.1.1"
+  sha256 "dbc6731d525142609498ffaa780f2cb60829953b3c5bd6da641b53024659d1f8"
 
   url "https://github.com/CodeOneLabs/DockDock/releases/download/v#{version}/DockDock-#{version}.zip"
   name "DockDock"
