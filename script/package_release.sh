@@ -11,7 +11,7 @@ mkdir -p "$RELEASE_DIR"
 "$ROOT_DIR/script/build_and_run.sh" --build-only
 
 rm -f "$ZIP_PATH"
-ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 
 SHA256="$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')"
 
