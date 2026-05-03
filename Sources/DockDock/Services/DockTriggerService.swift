@@ -147,7 +147,9 @@ final class DockTriggerService: ObservableObject {
         return Unmanaged.passUnretained(event)
     }
 
-    private func handleMouseMoved(to point: CGPoint) {
+    private func handleMouseMoved(to eventPoint: CGPoint) {
+        let point = currentPointerLocation() ?? eventPoint
+
         guard let settings, settings.isEnabled else {
             lastPointerLocation = point
             return
@@ -214,6 +216,10 @@ final class DockTriggerService: ObservableObject {
         CGWarpMouseCursorPosition(snapPoint)
         lastPointerLocation = snapPoint
         lastSnapDescription = "Snapped to \(Int(snapPoint.x)), \(Int(snapPoint.y))"
+    }
+
+    private func currentPointerLocation() -> CGPoint? {
+        CGEvent(source: nil)?.location
     }
 
     private func frontmostExcludedApp(settings: AppSettings) -> String? {
