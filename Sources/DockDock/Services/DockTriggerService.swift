@@ -1,5 +1,6 @@
 import ApplicationServices
 import AppKit
+import Combine
 import CoreGraphics
 import DockDockCore
 import Foundation
@@ -15,19 +16,30 @@ final class DockTriggerService: ObservableObject {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private weak var settings: AppSettings?
-    private var lastSnapTime: CFAbsoluteTime = 0
-    private var lastPointerLocation: CGPoint?
-    private var isSnapArmed = true
+    private let runtime = DockTriggerRuntime()
     private var permissionTimer: Timer?
+    private var settingsCancellables = Set<AnyCancellable>()
+    private var appActivationObserver: NSObjectProtocol?
+    private var screenParametersObserver: NSObjectProtocol?
 
     func bind(settings: AppSettings) {
         self.settings = settings
+        bindSettings(settings)
+        startWorkspaceMonitor()
+        startScreenMonitor()
+        refreshRuntimeConfiguration()
         startPermissionMonitor()
         restart()
     }
 
     deinit {
         permissionTimer?.invalidate()
+        if let appActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(appActivationObserver)
+        }
+        if let screenParametersObserver {
+            NotificationCenter.default.removeObserver(screenParametersObserver)
+        }
     }
 
     func restart() {
@@ -45,14 +57,14 @@ final class DockTriggerService: ObservableObject {
         }
 
         let mask = CGEventMask(1 << CGEventType.mouseMoved.rawValue)
-        let unmanagedSelf = Unmanaged.passUnretained(self).toOpaque()
+        let unmanagedRuntime = Unmanaged.passUnretained(runtime).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .listenOnly,
             eventsOfInterest: mask,
             callback: DockTriggerService.eventCallback,
-            userInfo: unmanagedSelf
+            userInfo: unmanagedRuntime
         ) else {
             lastError = "Could not create the mouse event tap. Recheck Accessibility/Input Monitoring permission."
             return
@@ -65,6 +77,8 @@ final class DockTriggerService: ObservableObject {
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
 
+        runtime.resetState()
+        refreshRuntimeConfiguration()
         CGEvent.tapEnable(tap: tap, enable: true)
         isRunning = true
         lastError = nil
@@ -82,8 +96,7 @@ final class DockTriggerService: ObservableObject {
         runLoopSource = nil
         eventTap = nil
         isRunning = false
-        lastPointerLocation = nil
-        isSnapArmed = true
+        runtime.resetState()
     }
 
     func refreshPermission() {
@@ -136,93 +149,104 @@ final class DockTriggerService: ObservableObject {
             return Unmanaged.passUnretained(event)
         }
 
-        let service = Unmanaged<DockTriggerService>
+        let runtime = Unmanaged<DockTriggerRuntime>
             .fromOpaque(userInfo)
             .takeUnretainedValue()
 
-        Task { @MainActor in
-            service.handleMouseMoved(to: event.location)
+        if let snap = runtime.handleMouseMoved(to: event.location) {
+            CGWarpMouseCursorPosition(snap.point)
+            Task { @MainActor in
+                DockTriggerService.handleCompletedSnap(snap)
+            }
         }
 
         return Unmanaged.passUnretained(event)
     }
 
-    private func handleMouseMoved(to eventPoint: CGPoint) {
-        let point = currentPointerLocation() ?? eventPoint
+    private static weak var activeService: DockTriggerService?
 
-        guard let settings, settings.isEnabled else {
-            lastPointerLocation = point
+    private static func handleCompletedSnap(_ snap: DockTriggerSnap) {
+        guard let service = activeService else {
             return
         }
 
-        if let excludedApp = frontmostExcludedApp(settings: settings) {
-            activeExclusionDescription = "Paused for \(excludedApp)"
-            lastPointerLocation = point
-            return
-        } else {
-            activeExclusionDescription = nil
-        }
-
-        guard let displayBounds = DisplayGeometry.bounds(containing: point) else {
-            lastPointerLocation = point
-            return
-        }
-
-        let geometry = TriggerGeometry(activationBand: CGFloat(settings.activationBand))
-        if !isSnapArmed {
-            let dockClearance = DisplayGeometry.dockClearance(containing: point, edge: settings.dockEdge)
-            let rearmDistance = geometry.rearmDistance(dockClearance: dockClearance)
-
-            guard geometry.isBeyondRearmDistance(
-                point,
-                in: displayBounds,
-                edge: settings.dockEdge,
-                rearmDistance: rearmDistance
-            ) else {
-                lastPointerLocation = point
-                return
-            }
-
-            isSnapArmed = true
-        }
-
-        let now = CFAbsoluteTimeGetCurrent()
-        guard now - lastSnapTime > 0.18 else {
-            lastPointerLocation = point
-            return
-        }
-
-        guard geometry.shouldSnap(
-            from: lastPointerLocation,
-            to: point,
-            in: displayBounds,
-            edge: settings.dockEdge
-        ) else {
-            lastPointerLocation = point
-            return
-        }
-
-        guard let snapPoint = geometry.snapPoint(
-            for: point,
-            in: displayBounds,
-            edge: settings.dockEdge
-        ) else {
-            lastPointerLocation = point
-            return
-        }
-
-        lastSnapTime = now
-        isSnapArmed = false
-        CGWarpMouseCursorPosition(snapPoint)
-        if settings.isSnapSoundEnabled {
+        if snap.shouldPlaySound {
             SnapSoundService.play()
         }
-        lastPointerLocation = snapPoint
-        lastSnapDescription = "Snapped to \(Int(snapPoint.x)), \(Int(snapPoint.y))"
+        service.lastSnapDescription = "Snapped to \(Int(snap.point.x)), \(Int(snap.point.y))"
     }
 
-    private func currentPointerLocation() -> CGPoint? {
-        CGEvent(source: nil)?.location
+    private func bindSettings(_ settings: AppSettings) {
+        settingsCancellables.removeAll()
+
+        settings.$isEnabled
+            .sink { [weak self] _ in self?.refreshRuntimeConfiguration() }
+            .store(in: &settingsCancellables)
+        settings.$activationBand
+            .sink { [weak self] _ in self?.refreshRuntimeConfiguration() }
+            .store(in: &settingsCancellables)
+        settings.$dockEdge
+            .sink { [weak self] _ in self?.refreshRuntimeConfiguration() }
+            .store(in: &settingsCancellables)
+        settings.$isSnapSoundEnabled
+            .sink { [weak self] _ in self?.refreshRuntimeConfiguration() }
+            .store(in: &settingsCancellables)
+        settings.$excludedBundleIDs
+            .sink { [weak self] _ in self?.refreshRuntimeConfiguration() }
+            .store(in: &settingsCancellables)
+    }
+
+    private func startWorkspaceMonitor() {
+        guard appActivationObserver == nil else {
+            return
+        }
+
+        appActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshRuntimeConfiguration()
+            }
+        }
+    }
+
+    private func startScreenMonitor() {
+        guard screenParametersObserver == nil else {
+            return
+        }
+
+        screenParametersObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshRuntimeConfiguration()
+            }
+        }
+    }
+
+    private func refreshRuntimeConfiguration() {
+        guard let settings else {
+            runtime.updateConfiguration(DockTriggerRuntimeConfiguration())
+            return
+        }
+
+        let excludedApp = frontmostExcludedApp(settings: settings)
+        activeExclusionDescription = excludedApp.map { "Paused for \($0)" }
+        runtime.updateConfiguration(
+            DockTriggerRuntimeConfiguration(
+                isEnabled: settings.isEnabled,
+                activationBand: CGFloat(settings.activationBand),
+                dockEdge: settings.dockEdge,
+                isSnapSoundEnabled: settings.isSnapSoundEnabled,
+                isFrontmostAppExcluded: excludedApp != nil,
+                dockDisplay: DisplayGeometry.dockDisplayTarget(edge: settings.dockEdge)
+            )
+        )
+        Self.activeService = self
     }
 
     private func frontmostExcludedApp(settings: AppSettings) -> String? {

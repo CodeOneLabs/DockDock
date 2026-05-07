@@ -10,7 +10,7 @@ private func expectEqual(_ actual: CGPoint?, _ expected: CGPoint, _ label: Strin
     }
 }
 
-private func expectNil(_ actual: CGPoint?, _ label: String) {
+private func expectNil<T>(_ actual: T?, _ label: String) {
     guard actual == nil else {
         fatalError("\(label): expected nil, got \(String(describing: actual))")
     }
@@ -98,6 +98,45 @@ expectTrue(
         rearmDistance: sideRearmDistance
     ),
     "left edge rearms after moving beyond Dock clearance"
+)
+
+let runtime = DockTriggerRuntime()
+runtime.updateConfiguration(
+    DockTriggerRuntimeConfiguration(
+        isEnabled: true,
+        activationBand: 40,
+        dockEdge: .bottom,
+        isSnapSoundEnabled: true,
+        isFrontmostAppExcluded: false,
+        dockDisplay: DockDisplayTarget(displayID: 1, bounds: bounds, dockClearance: 96)
+    )
+)
+expectNil(
+    runtime.handleMouseMoved(to: CGPoint(x: 2000, y: 870), now: 1),
+    "runtime ignores points outside the Dock display"
+)
+expectNil(
+    runtime.handleMouseMoved(to: CGPoint(x: 720, y: 850), now: 2),
+    "runtime stores movement outside activation band without snapping"
+)
+expectEqual(
+    runtime.handleMouseMoved(to: CGPoint(x: 720, y: 870), now: 3)?.point,
+    CGPoint(x: 720, y: 899),
+    "runtime snaps only on the configured Dock display"
+)
+runtime.updateConfiguration(
+    DockTriggerRuntimeConfiguration(
+        isEnabled: true,
+        activationBand: 40,
+        dockEdge: .bottom,
+        isSnapSoundEnabled: true,
+        isFrontmostAppExcluded: true,
+        dockDisplay: DockDisplayTarget(displayID: 1, bounds: bounds, dockClearance: 96)
+    )
+)
+expectNil(
+    runtime.handleMouseMoved(to: CGPoint(x: 720, y: 870), now: 4),
+    "runtime ignores movement while the frontmost app is excluded"
 )
 
 print("GeometryChecks passed")

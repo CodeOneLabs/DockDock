@@ -2,6 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-run}"
+CONFIGURATION="${DOCKDOCK_BUILD_CONFIGURATION:-release}"
 APP_NAME="DockDock"
 LEGACY_APP_NAME="DockZone"
 BUNDLE_ID="com.local.DockDock"
@@ -21,8 +22,12 @@ pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 pkill -x "dockdock" >/dev/null 2>&1 || true
 pkill -x "$LEGACY_APP_NAME" >/dev/null 2>&1 || true
 
-swift build --product "$APP_NAME"
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+if [[ "$MODE" == "--debug" || "$MODE" == "debug" ]]; then
+  CONFIGURATION="${DOCKDOCK_BUILD_CONFIGURATION:-debug}"
+fi
+
+swift build -c "$CONFIGURATION" --product "$APP_NAME"
+BUILD_BINARY="$(swift build -c "$CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE" "$DIST_DIR/dockdock.app" "$DIST_DIR/$LEGACY_APP_NAME.app"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
